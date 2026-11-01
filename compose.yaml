@@ -1,0 +1,90 @@
+name: learning-eshop
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-eshop}
+      POSTGRES_USER: ${POSTGRES_USER:-eshop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-only-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      APP_NAME: EshopApi
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:${API_PORT:-8000}
+      LOG_CHANNEL: stderr
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-eshop}
+      DB_USERNAME: ${POSTGRES_USER:-eshop}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-local-only-change-me}
+      CACHE_STORE: database
+      SESSION_DRIVER: database
+      QUEUE_CONNECTION: database
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./api:/var/www/html
+      - api_vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f .env ]; then cp .env.example .env; fi
+        if ! grep -q '^APP_KEY=base64:' .env; then php artisan key:generate --force; fi
+        php artisan migrate --seed --force
+        php artisan serve --host=0.0.0.0 --port=8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+
+volumes:
+  postgres_data:
+  api_vendor:
+  web_node_modules:
+  web_next:
