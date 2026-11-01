@@ -1,6 +1,7 @@
-FROM php:8.5-cli
+FROM php:8.5-cli-bookworm
 
-RUN apt-get update \
+RUN rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
         git \
